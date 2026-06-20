@@ -313,9 +313,53 @@
     margin-top: 3px;
   }
 
-  /* Map dot */
-  .airport-dot { cursor: pointer; }
-  .route-arc { cursor: pointer; }
+  /* Zoom controls */
+  #zoom-controls {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+  }
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .zoom-btn:hover { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+
+  #zoom-level {
+    position: absolute;
+    bottom: 24px;
+    left: 64px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  #world-svg {
+    cursor: grab;
+  }
+  #world-svg.dragging {
+    cursor: grabbing;
+  }
 
   @keyframes dash-flow {
     to { stroke-dashoffset: -40; }
@@ -340,6 +384,12 @@
 
 <div id="main">
   <div id="map-wrap">
+    <div id="zoom-controls">
+      <button class="zoom-btn" onclick="zoomBy(1.4)" title="Zoom in">+</button>
+      <button class="zoom-btn" onclick="zoomBy(1/1.4)" title="Zoom out">−</button>
+      <button class="zoom-btn" onclick="resetZoom()" title="Reset" style="font-size:13px;">⌂</button>
+    </div>
+    <div id="zoom-level">1.0×</div>
     <svg id="world-svg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
       <defs>
         <filter id="glow-amber">
@@ -351,9 +401,11 @@
           <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
       </defs>
-      <g id="land-layer"></g>
-      <g id="routes-layer"></g>
-      <g id="airports-layer"></g>
+      <g id="map-canvas">
+        <g id="land-layer"></g>
+        <g id="routes-layer"></g>
+        <g id="airports-layer"></g>
+      </g>
     </svg>
   </div>
 
@@ -396,16 +448,24 @@
         <input id="f-flightno" type="text" placeholder="BA117">
       </div>
     </div>
-    <div class="form-row">
-      <label>Class</label>
-      <select id="f-class">
-        <option value="Economy">Economy</option>
-        <option value="Premium Economy">Premium Economy</option>
-        <option value="Business">Business</option>
-        <option value="First">First</option>
-      </select>
-    </div>
     <div id="modal-error" style="font-size:12px; color:#ef4444; margin-top:6px; display:none;"></div>
+
+    <div id="custom-airport-fields" style="display:none; margin-top:4px; border-top:1px solid var(--border); padding-top:14px;">
+      <div style="font-size:11px; font-family:var(--mono); color:var(--muted); margin-bottom:10px; letter-spacing:0.06em;">UNKNOWN AIRPORT — ENTER DETAILS MANUALLY</div>
+      <div class="form-cols">
+        <div class="form-row"><label>Airport name</label><input id="c-name" type="text" placeholder="City Airport"></div>
+        <div class="form-row"><label>City</label><input id="c-city" type="text" placeholder="City"></div>
+      </div>
+      <div class="form-cols">
+        <div class="form-row"><label>Country code</label><input id="c-country" type="text" placeholder="US" maxlength="2"></div>
+        <div class="form-row" style="display:none"><label></label></div>
+      </div>
+      <div class="form-cols">
+        <div class="form-row"><label>Latitude</label><input id="c-lat" type="number" step="0.001" placeholder="34.271"></div>
+        <div class="form-row"><label>Longitude</label><input id="c-lng" type="number" step="0.001" placeholder="-77.903"></div>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">Look up coords at <a href="https://www.airportcodes.io" target="_blank" style="color:var(--blue)">airportcodes.io</a></div>
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" onclick="saveFlight()">Log Flight</button>
@@ -506,7 +566,143 @@ const AIRPORTS = {
   MAA:{n:"Chennai Intl",c:"Chennai",co:"IN",lat:12.99,lng:80.17},
   CCU:{n:"Netaji Subhas Chandra Bose",c:"Kolkata",co:"IN",lat:22.65,lng:88.45},
   HYD:{n:"Rajiv Gandhi Intl",c:"Hyderabad",co:"IN",lat:17.23,lng:78.43},
-  // Oceania
+  // US Regional
+  ILM:{n:"Wilmington Intl",c:"Wilmington, NC",co:"US",lat:34.271,lng:-77.903},
+  OAJ:{n:"Albert J. Ellis",c:"Jacksonville, NC",co:"US",lat:34.829,lng:-77.612},
+  RDU:{n:"Raleigh-Durham Intl",c:"Raleigh",co:"US",lat:35.878,lng:-78.787},
+  CLT:{n:"Charlotte Douglas Intl",c:"Charlotte",co:"US",lat:35.214,lng:-80.943},
+  CHS:{n:"Charleston Intl",c:"Charleston, SC",co:"US",lat:32.899,lng:-80.041},
+  SAV:{n:"Savannah/Hilton Head",c:"Savannah",co:"US",lat:32.127,lng:-81.202},
+  PHL:{n:"Philadelphia Intl",c:"Philadelphia",co:"US",lat:39.872,lng:-75.241},
+  BWI:{n:"Baltimore/Washington",c:"Baltimore",co:"US",lat:39.176,lng:-76.668},
+  DCA:{n:"Ronald Reagan Washington",c:"Washington DC",co:"US",lat:38.852,lng:-77.038},
+  IAD:{n:"Washington Dulles Intl",c:"Washington DC",co:"US",lat:38.944,lng:-77.456},
+  PIT:{n:"Pittsburgh Intl",c:"Pittsburgh",co:"US",lat:40.491,lng:-80.233},
+  CLE:{n:"Cleveland Hopkins Intl",c:"Cleveland",co:"US",lat:41.412,lng:-81.849},
+  CMH:{n:"John Glenn Columbus",c:"Columbus",co:"US",lat:39.998,lng:-82.892},
+  IND:{n:"Indianapolis Intl",c:"Indianapolis",co:"US",lat:39.717,lng:-86.294},
+  MKE:{n:"Milwaukee Mitchell Intl",c:"Milwaukee",co:"US",lat:42.947,lng:-87.897},
+  MSP:{n:"Minneapolis-Saint Paul Intl",c:"Minneapolis",co:"US",lat:44.882,lng:-93.222},
+  STL:{n:"St. Louis Lambert Intl",c:"St. Louis",co:"US",lat:38.748,lng:-90.370},
+  MSY:{n:"Louis Armstrong New Orleans",c:"New Orleans",co:"US",lat:29.993,lng:-90.258},
+  MEM:{n:"Memphis Intl",c:"Memphis",co:"US",lat:35.042,lng:-89.977},
+  BNA:{n:"Nashville Intl",c:"Nashville",co:"US",lat:36.124,lng:-86.678},
+  BHM:{n:"Birmingham-Shuttlesworth",c:"Birmingham",co:"US",lat:33.563,lng:-86.754},
+  TPA:{n:"Tampa Intl",c:"Tampa",co:"US",lat:27.975,lng:-82.533},
+  FLL:{n:"Fort Lauderdale Hollywood",c:"Fort Lauderdale",co:"US",lat:26.072,lng:-80.152},
+  PBI:{n:"Palm Beach Intl",c:"West Palm Beach",co:"US",lat:26.683,lng:-80.095},
+  JAX:{n:"Jacksonville Intl",c:"Jacksonville, FL",co:"US",lat:30.494,lng:-81.688},
+  SAT:{n:"San Antonio Intl",c:"San Antonio",co:"US",lat:29.533,lng:-98.470},
+  AUS:{n:"Austin-Bergstrom Intl",c:"Austin",co:"US",lat:30.198,lng:-97.670},
+  OKC:{n:"Will Rogers World",c:"Oklahoma City",co:"US",lat:35.393,lng:-97.601},
+  TUL:{n:"Tulsa Intl",c:"Tulsa",co:"US",lat:36.198,lng:-95.888},
+  ABQ:{n:"Albuquerque Intl Sunport",c:"Albuquerque",co:"US",lat:35.040,lng:-106.609},
+  TUS:{n:"Tucson Intl",c:"Tucson",co:"US",lat:32.116,lng:-110.941},
+  SAN:{n:"San Diego Intl",c:"San Diego",co:"US",lat:32.734,lng:-117.190},
+  SJC:{n:"San José Mineta",c:"San Jose",co:"US",lat:37.362,lng:-121.929},
+  OAK:{n:"Oakland Intl",c:"Oakland",co:"US",lat:37.721,lng:-122.221},
+  SMF:{n:"Sacramento Intl",c:"Sacramento",co:"US",lat:38.696,lng:-121.591},
+  PDX:{n:"Portland Intl",c:"Portland, OR",co:"US",lat:45.589,lng:-122.598},
+  GEG:{n:"Spokane Intl",c:"Spokane",co:"US",lat:47.620,lng:-117.534},
+  BOI:{n:"Boise Airport",c:"Boise",co:"US",lat:43.565,lng:-116.223},
+  SLC:{n:"Salt Lake City Intl",c:"Salt Lake City",co:"US",lat:40.789,lng:-111.978},
+  RNO:{n:"Reno-Tahoe Intl",c:"Reno",co:"US",lat:39.499,lng:-119.768},
+  HNL:{n:"Daniel K. Inouye Intl",c:"Honolulu",co:"US",lat:21.318,lng:-157.922},
+  OGG:{n:"Kahului",c:"Maui",co:"US",lat:20.899,lng:-156.430},
+  ANC:{n:"Ted Stevens Anchorage",c:"Anchorage",co:"US",lat:61.174,lng:-149.996},
+  FAI:{n:"Fairbanks Intl",c:"Fairbanks",co:"US",lat:64.815,lng:-147.856},
+  // Italy regional
+  BLQ:{n:"Guglielmo Marconi",c:"Bologna",co:"IT",lat:44.534,lng:11.291},
+  VCE:{n:"Venice Marco Polo",c:"Venice",co:"IT",lat:45.505,lng:12.352},
+  FLR:{n:"Florence Peretola",c:"Florence",co:"IT",lat:43.810,lng:11.205},
+  NAP:{n:"Naples Capodichino",c:"Naples",co:"IT",lat:40.886,lng:14.291},
+  PSA:{n:"Pisa Galileo Galilei",c:"Pisa",co:"IT",lat:43.683,lng:10.393},
+  BRI:{n:"Bari Karol Wojtyla",c:"Bari",co:"IT",lat:41.139,lng:16.761},
+  CTA:{n:"Catania-Fontanarossa",c:"Catania",co:"IT",lat:37.467,lng:15.066},
+  PMO:{n:"Palermo Falcone-Borsellino",c:"Palermo",co:"IT",lat:38.176,lng:13.091},
+  TRN:{n:"Turin Caselle",c:"Turin",co:"IT",lat:45.201,lng:7.649},
+  GOA:{n:"Genoa Cristoforo Colombo",c:"Genoa",co:"IT",lat:44.413,lng:8.838},
+  // Europe regional
+  EDI:{n:"Edinburgh",c:"Edinburgh",co:"GB",lat:55.950,lng:-3.373},
+  MAN:{n:"Manchester",c:"Manchester",co:"GB",lat:53.354,lng:-2.275},
+  BHX:{n:"Birmingham",c:"Birmingham",co:"GB",lat:52.453,lng:-1.748},
+  GLA:{n:"Glasgow",c:"Glasgow",co:"GB",lat:55.871,lng:-4.433},
+  BRS:{n:"Bristol",c:"Bristol",co:"GB",lat:51.383,lng:-2.719},
+  NCL:{n:"Newcastle",c:"Newcastle",co:"GB",lat:55.038,lng:-1.692},
+  LBA:{n:"Leeds Bradford",c:"Leeds",co:"GB",lat:53.866,lng:-1.661},
+  NTE:{n:"Nantes Atlantique",c:"Nantes",co:"FR",lat:47.154,lng:-1.611},
+  LYS:{n:"Lyon Saint-Exupéry",c:"Lyon",co:"FR",lat:45.726,lng:5.090},
+  MRS:{n:"Marseille Provence",c:"Marseille",co:"FR",lat:43.435,lng:5.214},
+  TLS:{n:"Toulouse-Blagnac",c:"Toulouse",co:"FR",lat:43.629,lng:1.368},
+  NCE:{n:"Nice Côte d'Azur",c:"Nice",co:"FR",lat:43.658,lng:7.215},
+  BOD:{n:"Bordeaux-Mérignac",c:"Bordeaux",co:"FR",lat:44.828,lng:-0.715},
+  STR:{n:"Stuttgart",c:"Stuttgart",co:"DE",lat:48.690,lng:9.222},
+  HAM:{n:"Hamburg",c:"Hamburg",co:"DE",lat:53.630,lng:9.988},
+  DUS:{n:"Düsseldorf",c:"Düsseldorf",co:"DE",lat:51.289,lng:6.767},
+  CGN:{n:"Cologne Bonn",c:"Cologne",co:"DE",lat:50.866,lng:7.143},
+  NUE:{n:"Nuremberg",c:"Nuremberg",co:"DE",lat:49.499,lng:11.078},
+  TXL:{n:"Berlin Tegel (closed)",c:"Berlin",co:"DE",lat:52.560,lng:13.288},
+  BER:{n:"Berlin Brandenburg",c:"Berlin",co:"DE",lat:52.366,lng:13.503},
+  HAJ:{n:"Hannover",c:"Hannover",co:"DE",lat:52.461,lng:9.685},
+  ALC:{n:"Alicante-Elche",c:"Alicante",co:"ES",lat:38.282,lng:-0.558},
+  AGP:{n:"Málaga Costa del Sol",c:"Málaga",co:"ES",lat:36.675,lng:-4.499},
+  PMI:{n:"Palma de Mallorca",c:"Mallorca",co:"ES",lat:39.552,lng:2.739},
+  IBZ:{n:"Ibiza",c:"Ibiza",co:"ES",lat:38.873,lng:1.373},
+  SVQ:{n:"Seville",c:"Seville",co:"ES",lat:37.418,lng:-5.893},
+  VLC:{n:"Valencia",c:"Valencia",co:"ES",lat:39.489,lng:-0.482},
+  BIO:{n:"Bilbao",c:"Bilbao",co:"ES",lat:43.301,lng:-2.911},
+  // Canada regional
+  YYC:{n:"Calgary Intl",c:"Calgary",co:"CA",lat:51.114,lng:-114.020},
+  YEG:{n:"Edmonton Intl",c:"Edmonton",co:"CA",lat:53.309,lng:-113.580},
+  YOW:{n:"Ottawa Macdonald-Cartier",c:"Ottawa",co:"CA",lat:45.323,lng:-75.669},
+  YHZ:{n:"Halifax Stanfield",c:"Halifax",co:"CA",lat:44.881,lng:-63.509},
+  YWG:{n:"Winnipeg James Armstrong Richardson",c:"Winnipeg",co:"CA",lat:49.910,lng:-97.240},
+  YQB:{n:"Québec City Jean Lesage",c:"Quebec City",co:"CA",lat:46.791,lng:-71.393},
+  // Asia regional
+  CAN:{n:"Guangzhou Baiyun",c:"Guangzhou",co:"CN",lat:23.392,lng:113.299},
+  CTU:{n:"Chengdu Shuangliu",c:"Chengdu",co:"CN",lat:30.578,lng:103.947},
+  XIY:{n:"Xi'an Xianyang",c:"Xi'an",co:"CN",lat:34.447,lng:108.752},
+  SZX:{n:"Shenzhen Bao'an",c:"Shenzhen",co:"CN",lat:22.640,lng:113.811},
+  WUH:{n:"Wuhan Tianhe",c:"Wuhan",co:"CN",lat:30.783,lng:114.208},
+  TPE:{n:"Taoyuan Intl",c:"Taipei",co:"TW",lat:25.077,lng:121.232},
+  RGN:{n:"Yangon Intl",c:"Yangon",co:"MM",lat:16.907,lng:96.133},
+  SGN:{n:"Tan Son Nhat",c:"Ho Chi Minh City",co:"VN",lat:10.818,lng:106.652},
+  HAN:{n:"Noi Bai Intl",c:"Hanoi",co:"VN",lat:21.221,lng:105.807},
+  DAD:{n:"Da Nang Intl",c:"Da Nang",co:"VN",lat:16.044,lng:108.199},
+  REP:{n:"Siem Reap Intl",c:"Siem Reap",co:"KH",lat:13.411,lng:103.813},
+  CMB:{n:"Bandaranaike Intl",c:"Colombo",co:"LK",lat:7.180,lng:79.884},
+  KTM:{n:"Tribhuvan Intl",c:"Kathmandu",co:"NP",lat:27.697,lng:85.361},
+  DAC:{n:"Hazrat Shahjalal Intl",c:"Dhaka",co:"BD",lat:23.843,lng:90.398},
+  // Middle East regional
+  MCT:{n:"Muscat Intl",c:"Muscat",co:"OM",lat:23.593,lng:58.285},
+  BAH:{n:"Bahrain Intl",c:"Manama",co:"BH",lat:26.270,lng:50.634},
+  KWI:{n:"Kuwait Intl",c:"Kuwait City",co:"KW",lat:29.227,lng:47.969},
+  AMM:{n:"Queen Alia Intl",c:"Amman",co:"JO",lat:31.723,lng:35.993},
+  BEY:{n:"Rafic Hariri Intl",c:"Beirut",co:"LB",lat:33.821,lng:35.488},
+  BGW:{n:"Baghdad Intl",c:"Baghdad",co:"IQ",lat:33.263,lng:44.235},
+  IKA:{n:"Imam Khomeini Intl",c:"Tehran",co:"IR",lat:35.416,lng:51.152},
+  // Africa regional
+  ACC:{n:"Kotoka Intl",c:"Accra",co:"GH",lat:5.605,lng:-0.167},
+  ABV:{n:"Nnamdi Azikiwe Intl",c:"Abuja",co:"NG",lat:9.007,lng:7.263},
+  DAR:{n:"Julius Nyerere Intl",c:"Dar es Salaam",co:"TZ",lat:-6.878,lng:39.202},
+  EBB:{n:"Entebbe Intl",c:"Kampala",co:"UG",lat:0.042,lng:32.443},
+  HRE:{n:"Robert Gabriel Mugabe Intl",c:"Harare",co:"ZW",lat:-17.932,lng:31.093},
+  TUN:{n:"Carthage Intl",c:"Tunis",co:"TN",lat:36.851,lng:10.227},
+  ALG:{n:"Houari Boumediene",c:"Algiers",co:"DZ",lat:36.691,lng:3.215},
+  RAK:{n:"Marrakech Menara",c:"Marrakech",co:"MA",lat:31.607,lng:-8.036},
+  // Latin America regional
+  CUN:{n:"Cancún Intl",c:"Cancún",co:"MX",lat:21.037,lng:-86.877},
+  GDL:{n:"Don Miguel Hidalgo",c:"Guadalajara",co:"MX",lat:20.521,lng:-103.311},
+  MTY:{n:"Monterrey Intl",c:"Monterrey",co:"MX",lat:25.779,lng:-100.107},
+  HAV:{n:"José Martí Intl",c:"Havana",co:"CU",lat:22.990,lng:-82.409},
+  PTY:{n:"Tocumen Intl",c:"Panama City",co:"PA",lat:9.071,lng:-79.384},
+  SJO:{n:"Juan Santamaría Intl",c:"San José",co:"CR",lat:9.994,lng:-84.208},
+  UIO:{n:"Quito Mariscal Sucre",c:"Quito",co:"EC",lat:-0.129,lng:-78.358},
+  GYE:{n:"Guayaquil José J. de Olmedo",c:"Guayaquil",co:"EC",lat:-2.158,lng:-79.883},
+  VVI:{n:"Viru Viru Intl",c:"Santa Cruz",co:"BO",lat:-17.645,lng:-63.135},
+  ASU:{n:"Silvio Pettirossi Intl",c:"Asunción",co:"PY",lat:-25.240,lng:-57.519},
+  MVD:{n:"Carrasco Intl",c:"Montevideo",co:"UY",lat:-34.838,lng:-56.031},
+  // Oceania regional
   SYD:{n:"Sydney Kingsford Smith",c:"Sydney",co:"AU",lat:-33.94,lng:151.18},
   MEL:{n:"Melbourne",c:"Melbourne",co:"AU",lat:-37.67,lng:144.84},
   BNE:{n:"Brisbane",c:"Brisbane",co:"AU",lat:-27.38,lng:153.12},
@@ -535,11 +731,15 @@ M 135 95 L 145 88 L 158 85 L 172 86 L 185 90 L 195 96 L 202 105 L 205 115 L 202 
 let flights = JSON.parse(localStorage.getItem('flight-tracker-v1') || '[]');
 let highlightedFlight = null;
 
-// ─── Map projection (Mercator-ish) ────────────────────────────────────────────
+// ─── Map projection — equirectangular matching D3 scale=159, translate=[500,250] ─
 function project(lat, lng) {
-  const x = (lng + 180) / 360 * 1000;
-  const latRad = lat * Math.PI / 180;
-  const y = 250 - (Math.log(Math.tan(Math.PI/4 + latRad/2)) / Math.PI) * 230;
+  if (window._mapProjection) {
+    const pt = window._mapProjection([lng, lat]);
+    return pt || [0, 0];
+  }
+  // Fallback equirectangular (matches D3 geoEquirectangular scale=159, translate=[500,250])
+  const x = 500 + (lng / 180) * 159 * Math.PI;
+  const y = 250 - (lat / 90) * 159 * (Math.PI / 2);
   return [x, y];
 }
 
@@ -565,78 +765,67 @@ function haversine(lat1, lng1, lat2, lng2) {
   return Math.round(2 * R * Math.asin(Math.sqrt(a)));
 }
 
-// ─── Load world map GeoJSON ───────────────────────────────────────────────────
+// ─── Load world map via D3 + topojson ────────────────────────────────────────
 async function loadWorldMap() {
   try {
-    const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
-    const topo = await res.json();
+    const [d3, topojson, topo] = await Promise.all([
+      import('https://cdn.jsdelivr.net/npm/d3-geo@3/+esm'),
+      import('https://cdn.jsdelivr.net/npm/topojson-client@3/+esm'),
+      fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json())
+    ]);
 
-    // Convert topojson to SVG paths using a tiny toposvg approach
-    const countries = topo.objects.countries;
-    const arcs = topo.arcs;
+    // Use an equirectangular projection matched to our 1000×500 SVG viewBox
+    const projection = d3.geoEquirectangular()
+      .scale(159)
+      .translate([500, 250])
+      .precision(0.1);
 
-    function decodeArcs(arcIdxs) {
-      const points = [];
-      for (let arcIdx of arcIdxs) {
-        let i = arcIdx, reversed = false;
-        if (i < 0) { i = ~i; reversed = true; }
-        const arc = arcs[i].slice();
-        // Delta decode
-        for (let j = 1; j < arc.length; j++) {
-          arc[j][0] += arc[j-1][0];
-          arc[j][1] += arc[j-1][1];
-        }
-        const pts = reversed ? arc.reverse() : arc;
-        if (points.length) points.shift();
-        points.push(...pts);
-      }
-      return points;
-    }
-
-    function rawToLatLng([x,y]) {
-      return [y / topo.transform.scale[1] + topo.transform.translate[1],
-              x / topo.transform.scale[0] + topo.transform.translate[0]];
-    }
-
-    // Actually use the scale/translate from topo
-    const scale = topo.transform.scale;
-    const translate = topo.transform.translate;
-
-    function rawToSVG([rx, ry]) {
-      const lng = rx * scale[0] + translate[0];
-      const lat = ry * scale[1] + translate[1];
-      return project(lat, lng);
-    }
-
+    const pathGen = d3.geoPath().projection(projection);
     const landLayer = document.getElementById('land-layer');
 
-    for (const geom of countries.geometries) {
-      const render = (rings) => {
-        let d = '';
-        for (const ring of rings) {
-          const pts = decodeArcs(ring);
-          if (!pts.length) continue;
-          const svgPts = pts.map(rawToSVG);
-          d += `M ${svgPts[0][0].toFixed(1)} ${svgPts[0][1].toFixed(1)} `;
-          for (let i = 1; i < svgPts.length; i++) {
-            d += `L ${svgPts[i][0].toFixed(1)} ${svgPts[i][1].toFixed(1)} `;
-          }
-          d += 'Z ';
-        }
-        const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-        path.setAttribute('d', d);
-        path.setAttribute('fill', '#0d1e35');
-        path.setAttribute('stroke', '#1d3455');
-        path.setAttribute('stroke-width', '0.4');
-        landLayer.appendChild(path);
-      };
+    // Draw ocean background
+    const ocean = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    ocean.setAttribute('x','0'); ocean.setAttribute('y','0');
+    ocean.setAttribute('width','1000'); ocean.setAttribute('height','500');
+    ocean.setAttribute('fill','#07101f');
+    landLayer.appendChild(ocean);
 
-      if (geom.type === 'Polygon') render(geom.arcs);
-      else if (geom.type === 'MultiPolygon') geom.arcs.forEach(render);
+    // Draw graticule (grid lines)
+    const graticule = d3.geoGraticule()();
+    const gridPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+    gridPath.setAttribute('d', pathGen(graticule));
+    gridPath.setAttribute('fill','none');
+    gridPath.setAttribute('stroke','#0d2040');
+    gridPath.setAttribute('stroke-width','0.3');
+    landLayer.appendChild(gridPath);
+
+    // Draw countries
+    const countries = topojson.feature(topo, topo.objects.countries);
+    for (const feature of countries.features) {
+      const d = pathGen(feature);
+      if (!d) continue;
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', '#0d1e35');
+      path.setAttribute('stroke', '#1d3455');
+      path.setAttribute('stroke-width', '0.5');
+      landLayer.appendChild(path);
     }
 
+    // Draw country borders
+    const borders = topojson.mesh(topo, topo.objects.countries, (a,b) => a !== b);
+    const borderPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+    borderPath.setAttribute('d', pathGen(borders));
+    borderPath.setAttribute('fill','none');
+    borderPath.setAttribute('stroke','#1a3060');
+    borderPath.setAttribute('stroke-width','0.4');
+    landLayer.appendChild(borderPath);
+
+    // Store projection for airport dot placement
+    window._mapProjection = projection;
+
   } catch(e) {
-    // Fallback: simple background
+    console.error('Map load failed:', e);
     const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
     rect.setAttribute('x','0'); rect.setAttribute('y','0');
     rect.setAttribute('width','1000'); rect.setAttribute('height','500');
@@ -685,7 +874,7 @@ function renderFlights() {
     arc.style.cursor = 'pointer';
 
     arc.addEventListener('mouseenter', (e) => {
-      tooltip.innerHTML = `<div class="tt-route">${f.from} → ${f.to}</div><div class="tt-meta">${km.toLocaleString()} km · ${f.date || ''} · ${f.cls || ''}</div>`;
+      tooltip.innerHTML = `<div class="tt-route">${f.from} → ${f.to}</div><div class="tt-meta">${km.toLocaleString()} km · ${f.date || ''}</div>`;
       tooltip.classList.add('visible');
     });
     arc.addEventListener('mousemove', (e) => {
@@ -775,9 +964,19 @@ function renderSidebar() {
     list.innerHTML = '<div class="empty-state"><div class="big">✈</div>No flights logged yet.<br>Click <strong>+ Log Flight</strong> to add your first journey.</div>';
     return;
   }
+
+  // Sort by date descending (most recent first); undated flights go to the bottom
+  const sorted = flights
+    .map((f, idx) => ({ f, idx }))
+    .sort((a, b) => {
+      if (!a.f.date && !b.f.date) return 0;
+      if (!a.f.date) return 1;
+      if (!b.f.date) return -1;
+      return b.f.date.localeCompare(a.f.date);
+    });
+
   list.innerHTML = '';
-  [...flights].reverse().forEach((f, revIdx) => {
-    const idx = flights.length - 1 - revIdx;
+  sorted.forEach(({ f, idx }) => {
     const fromAP = AIRPORTS[f.from];
     const toAP = AIRPORTS[f.to];
     const km = (fromAP && toAP) ? haversine(fromAP.lat,fromAP.lng,toAP.lat,toAP.lng).toLocaleString() + ' km' : '';
@@ -792,7 +991,6 @@ function renderSidebar() {
       <div class="flight-meta">
         <span>${f.date || '—'}</span>
         <span>${km}</span>
-        <span>${f.cls || ''}</span>
       </div>
       <button class="flight-delete" onclick="deleteFlight(${idx}, event)" title="Remove">✕</button>
     `;
@@ -814,13 +1012,15 @@ function openModal() {
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-airline').value = '';
   document.getElementById('f-flightno').value = '';
-  document.getElementById('f-class').value = 'Economy';
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('f-from').focus();
 }
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+  pendingUnknown = null;
+  document.getElementById('custom-airport-fields').style.display = 'none';
+  document.getElementById('modal-error').style.display = 'none';
 }
 
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
@@ -833,20 +1033,71 @@ function showError(msg) {
   el.style.display = 'block';
 }
 
+let pendingUnknown = null;
+
+function checkUnknownAirports(from, to) {
+  const unknowns = [];
+  if (from && !AIRPORTS[from]) unknowns.push(from);
+  if (to && !AIRPORTS[to]) unknowns.push(to);
+  return unknowns;
+}
+
 function saveFlight() {
   const from = document.getElementById('f-from').value.trim().toUpperCase();
   const to = document.getElementById('f-to').value.trim().toUpperCase();
   const date = document.getElementById('f-date').value;
   const airline = document.getElementById('f-airline').value.trim();
   const flightno = document.getElementById('f-flightno').value.trim();
-  const cls = document.getElementById('f-class').value;
+
+  document.getElementById('modal-error').style.display = 'none';
 
   if (!from || !to) return showError('Please enter both departure and arrival airports.');
-  if (!AIRPORTS[from]) return showError(`Unknown airport code: "${from}". Try a 3-letter IATA code like JFK, LHR, SIN.`);
-  if (!AIRPORTS[to]) return showError(`Unknown airport code: "${to}". Try a 3-letter IATA code like JFK, LHR, SIN.`);
   if (from === to) return showError('Departure and arrival airports must be different.');
 
-  flights.push({ from, to, date, airline, flightno, cls });
+  const unknowns = checkUnknownAirports(from, to);
+  if (unknowns.length > 0 && !pendingUnknown) {
+    // Show custom fields for first unknown
+    pendingUnknown = unknowns[0];
+    const fields = document.getElementById('custom-airport-fields');
+    fields.style.display = 'block';
+    fields.querySelector('div').textContent = `UNKNOWN CODE "${pendingUnknown}" — ENTER DETAILS`;
+    document.getElementById('c-name').value = '';
+    document.getElementById('c-city').value = '';
+    document.getElementById('c-country').value = '';
+    document.getElementById('c-lat').value = '';
+    document.getElementById('c-lng').value = '';
+    showError(`Airport code "${pendingUnknown}" not found — fill in details below, then click Log Flight again.`);
+    return;
+  }
+
+  if (pendingUnknown) {
+    const name = document.getElementById('c-name').value.trim();
+    const city = document.getElementById('c-city').value.trim();
+    const country = document.getElementById('c-country').value.trim().toUpperCase();
+    const lat = parseFloat(document.getElementById('c-lat').value);
+    const lng = parseFloat(document.getElementById('c-lng').value);
+    if (!name || !city || !country || isNaN(lat) || isNaN(lng)) {
+      return showError('Please fill in all custom airport fields (name, city, country code, lat, lng).');
+    }
+    AIRPORTS[pendingUnknown] = { n: name, c: city, co: country, lat, lng };
+    // Check if there's another unknown
+    const remaining = checkUnknownAirports(from, to).filter(c => c !== pendingUnknown);
+    if (remaining.length > 0) {
+      pendingUnknown = remaining[0];
+      document.getElementById('custom-airport-fields').querySelector('div').textContent = `UNKNOWN CODE "${pendingUnknown}" — ENTER DETAILS`;
+      document.getElementById('c-name').value = '';
+      document.getElementById('c-city').value = '';
+      document.getElementById('c-country').value = '';
+      document.getElementById('c-lat').value = '';
+      document.getElementById('c-lng').value = '';
+      showError(`Now enter details for "${pendingUnknown}".`);
+      return;
+    }
+    pendingUnknown = null;
+    document.getElementById('custom-airport-fields').style.display = 'none';
+  }
+
+  flights.push({ from, to, date, airline, flightno });
   localStorage.setItem('flight-tracker-v1', JSON.stringify(flights));
   closeModal();
   highlightedFlight = flights.length - 1;
@@ -877,6 +1128,140 @@ document.addEventListener('keydown', (e) => {
     this.setSelectionRange(pos, pos);
   });
 });
+
+// ─── Zoom & Pan ───────────────────────────────────────────────────────────────
+const MIN_ZOOM = 1, MAX_ZOOM = 12;
+let transform = { x: 0, y: 0, k: 1 };
+
+function applyTransform() {
+  document.getElementById('map-canvas').setAttribute(
+    'transform', `translate(${transform.x},${transform.y}) scale(${transform.k})`
+  );
+  document.getElementById('zoom-level').textContent = transform.k.toFixed(1) + '×';
+  // Scale down stroke widths and dot sizes as we zoom in
+  const invK = 1 / transform.k;
+  document.querySelectorAll('#routes-layer path').forEach(p => {
+    const base = p.classList.contains('arc-animated') ? 2 : 1.2;
+    p.setAttribute('stroke-width', base * invK);
+  });
+  document.querySelectorAll('#airports-layer circle[r="5"]').forEach(c => c.setAttribute('r', 5 * invK));
+  document.querySelectorAll('#airports-layer circle[r]').forEach(c => {
+    if (parseFloat(c.getAttribute('r')) < 4) c.setAttribute('r', 2.2 * invK);
+  });
+  document.querySelectorAll('#airports-layer text').forEach(t => {
+    t.setAttribute('font-size', 7 * invK);
+  });
+}
+
+function clampTranslate(x, y, k) {
+  // Allow panning up to half a screen-width/height beyond the map edge
+  const svg = document.getElementById('world-svg');
+  const W = svg.clientWidth, H = svg.clientHeight;
+  const mapW = 1000 * k * (W / 1000);
+  const mapH = 500 * k * (H / 500);
+  // In SVG user units (viewBox is 1000×500)
+  const maxX = 0, minX = -(k - 1) * 1000;
+  const maxY = 0, minY = -(k - 1) * 500;
+  return [Math.min(maxX, Math.max(minX, x)), Math.min(maxY, Math.max(minY, y))];
+}
+
+function zoomBy(factor, cx, cy) {
+  // cx, cy in SVG viewBox coords — zoom around that point
+  if (cx === undefined) { cx = 500; cy = 250; }
+  const newK = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, transform.k * factor));
+  const ratio = newK / transform.k;
+  let nx = cx - ratio * (cx - transform.x);
+  let ny = cy - ratio * (cy - transform.y);
+  [nx, ny] = clampTranslate(nx, ny, newK);
+  transform = { x: nx, y: ny, k: newK };
+  applyTransform();
+}
+
+function resetZoom() {
+  transform = { x: 0, y: 0, k: 1 };
+  applyTransform();
+}
+
+// Mouse wheel zoom
+const svg = document.getElementById('world-svg');
+svg.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  // Convert mouse position to SVG viewBox coordinates
+  const scaleX = 1000 / rect.width;
+  const scaleY = 500 / rect.height;
+  const cx = (e.clientX - rect.left) * scaleX;
+  const cy = (e.clientY - rect.top) * scaleY;
+  const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+  zoomBy(factor, cx, cy);
+}, { passive: false });
+
+// Drag to pan
+let drag = null;
+svg.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const rect = svg.getBoundingClientRect();
+  const scaleX = 1000 / rect.width, scaleY = 500 / rect.height;
+  drag = {
+    startX: e.clientX * scaleX - transform.x,
+    startY: e.clientY * scaleY - transform.y,
+    scaleX, scaleY
+  };
+  svg.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  let nx = e.clientX * drag.scaleX - drag.startX;
+  let ny = e.clientY * drag.scaleY - drag.startY;
+  [nx, ny] = clampTranslate(nx, ny, transform.k);
+  transform.x = nx;
+  transform.y = ny;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  drag = null;
+  svg.classList.remove('dragging');
+});
+
+// Touch pinch-to-zoom + drag
+let touches = {};
+let lastPinchDist = null;
+svg.addEventListener('touchstart', (e) => {
+  [...e.changedTouches].forEach(t => touches[t.identifier] = { x: t.clientX, y: t.clientY });
+  if (e.touches.length === 1) {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = 1000 / rect.width, scaleY = 500 / rect.height;
+    drag = {
+      startX: e.touches[0].clientX * scaleX - transform.x,
+      startY: e.touches[0].clientY * scaleY - transform.y,
+      scaleX, scaleY
+    };
+  }
+  if (e.touches.length === 2) { drag = null; lastPinchDist = null; }
+}, { passive: true });
+svg.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1 && drag) {
+    let nx = e.touches[0].clientX * drag.scaleX - drag.startX;
+    let ny = e.touches[0].clientY * drag.scaleY - drag.startY;
+    [nx, ny] = clampTranslate(nx, ny, transform.k);
+    transform.x = nx; transform.y = ny;
+    applyTransform();
+  }
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (lastPinchDist) {
+      const rect = svg.getBoundingClientRect();
+      const cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) * (1000 / rect.width);
+      const cy = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) * (500 / rect.height);
+      zoomBy(dist / lastPinchDist, cx, cy);
+    }
+    lastPinchDist = dist;
+  }
+}, { passive: false });
+svg.addEventListener('touchend', () => { drag = null; lastPinchDist = null; });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadWorldMap();
