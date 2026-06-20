@@ -6,6 +6,7 @@
 <title>Flight Tracker — My Journey Log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -313,7 +314,147 @@
     margin-top: 3px;
   }
 
-  /* Zoom controls */
+  /* Auth screen */
+  #auth-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--navy);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #auth-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    width: 360px;
+    padding: 36px;
+  }
+  #auth-box h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 6px;
+  }
+  #auth-box p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+  #auth-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .auth-tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .auth-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  #auth-error {
+    font-size: 12px;
+    color: #ef4444;
+    margin-bottom: 12px;
+    display: none;
+  }
+  #auth-success {
+    font-size: 12px;
+    color: #22c55e;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .auth-submit {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    padding: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+  .auth-submit:hover { opacity: 0.85; }
+  .auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* User menu in topbar */
+  #user-menu-wrap { position: relative; }
+  #user-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 12px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: border-color 0.15s;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #user-btn:hover { border-color: var(--blue); color: var(--text); }
+  #user-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    min-width: 160px;
+    z-index: 50;
+  }
+  #user-dropdown.open { display: block; }
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .dropdown-item:hover { background: var(--blue-dim); color: var(--text); }
+  .dropdown-item.danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+
+  /* Loading overlay */
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--navy);
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
   #zoom-controls {
     position: absolute;
     bottom: 24px;
@@ -371,6 +512,32 @@
 </head>
 <body>
 
+<!-- Loading overlay -->
+<div id="loading-overlay">Initialising…</div>
+
+<!-- Auth screen -->
+<div id="auth-screen" style="display:none">
+  <div id="auth-box">
+    <h1>✈ Flight Tracker</h1>
+    <p>Sign in with a username to sync your flights across all devices.</p>
+    <div id="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" onclick="switchTab('signup')">Create Account</button>
+    </div>
+    <div id="auth-error"></div>
+    <div id="auth-success"></div>
+    <div class="form-row">
+      <label>Username</label>
+      <input id="auth-username" type="text" placeholder="e.g. maverick" autocomplete="username" maxlength="32">
+    </div>
+    <div class="form-row">
+      <label>Password</label>
+      <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="auth-submit" id="auth-submit-btn" onclick="submitAuth()">Sign In</button>
+  </div>
+</div>
+
 <div id="topbar">
   <h1>✈ LOGBOOK <span>/ FLIGHT TRACKER</span></h1>
   <div class="stats-bar">
@@ -379,7 +546,16 @@
     <div class="stat"><div class="val" id="stat-airports">0</div><div class="lbl">Airports</div></div>
     <div class="stat"><div class="val" id="stat-countries">0</div><div class="lbl">Countries</div></div>
   </div>
-  <button id="add-btn" onclick="openModal()">+ Log Flight</button>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <button id="add-btn" onclick="openModal()">+ Log Flight</button>
+    <div id="user-menu-wrap">
+      <button id="user-btn" onclick="toggleUserMenu()">Account</button>
+      <div id="user-dropdown">
+        <button class="dropdown-item" id="user-email-item" disabled style="opacity:0.5;cursor:default;"></button>
+        <button class="dropdown-item danger" onclick="signOut()">Sign Out</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="main">
@@ -727,9 +903,140 @@ const COUNTRY_COORDS = {
 const WORLD_PATH = `M 72 155 L 75 148 L 82 144 L 88 138 L 95 132 L 105 128 L 112 130 L 118 135 L 124 138 L 128 142 L 132 148 L 130 155 L 124 162 L 118 165 L 112 168 L 105 166 L 98 162 L 90 160 Z
 M 135 95 L 145 88 L 158 85 L 172 86 L 185 90 L 195 96 L 202 105 L 205 115 L 202 125 L 195 133 L 185 138 L 172 140 L 158 138 L 145 132 L 138 122 L 135 110 Z`;
 
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://oyjfqfdfzbqyqwzclsju.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95amZxZmRmemJxeXF3emNsc2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5MjI1MzgsImV4cCI6MjA5NzQ5ODUzOH0.l8Y_jjHsNmWABnYYTcRQrjoPhrM8_TkhgFNtUn6cM4M';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ─── State ────────────────────────────────────────────────────────────────────
-let flights = JSON.parse(localStorage.getItem('flight-tracker-v1') || '[]');
+let flights = [];
+let currentUser = null;
 let highlightedFlight = null;
+
+// ─── Auth UI ──────────────────────────────────────────────────────────────────
+let authMode = 'login';
+const FAKE_DOMAIN = '@flighttracker.app';
+
+function usernameToEmail(username) {
+  return username.toLowerCase().replace(/[^a-z0-9._-]/g, '') + FAKE_DOMAIN;
+}
+
+function switchTab(mode) {
+  authMode = mode;
+  document.querySelectorAll('.auth-tab').forEach((t, i) => {
+    t.classList.toggle('active', (mode === 'login' && i === 0) || (mode === 'signup' && i === 1));
+  });
+  document.getElementById('auth-submit-btn').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
+  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-success').style.display = 'none';
+  document.getElementById('auth-password').value = '';
+}
+
+function setAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('auth-success').style.display = 'none';
+}
+function setAuthSuccess(msg) {
+  const el = document.getElementById('auth-success');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+async function submitAuth() {
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const btn = document.getElementById('auth-submit-btn');
+
+  if (!username) return setAuthError('Please enter a username.');
+  if (username.length < 3) return setAuthError('Username must be at least 3 characters.');
+  if (!password) return setAuthError('Please enter a password.');
+  if (authMode === 'signup' && password.length < 6) return setAuthError('Password must be at least 6 characters.');
+
+  const email = usernameToEmail(username);
+  btn.disabled = true;
+  btn.textContent = 'Please wait…';
+
+  if (authMode === 'login') {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthError('Incorrect username or password.');
+      btn.disabled = false; btn.textContent = 'Sign In';
+    }
+  } else {
+    const { error } = await sb.auth.signUp({
+      email, password,
+      options: { data: { username } }
+    });
+    if (error) {
+      setAuthError(error.message.includes('already registered')
+        ? 'That username is already taken.'
+        : error.message);
+      btn.disabled = false; btn.textContent = 'Create Account';
+    } else {
+      // Auto sign in after signup (works when email confirmation is disabled)
+      const { error: loginErr } = await sb.auth.signInWithPassword({ email, password });
+      if (loginErr) {
+        setAuthSuccess('Account created! You can now sign in.');
+        btn.disabled = false; btn.textContent = 'Create Account';
+      }
+    }
+  }
+}
+
+// Enter key in auth
+document.getElementById('auth-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('auth-password').focus(); });
+document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+
+function toggleUserMenu() {
+  document.getElementById('user-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('user-menu-wrap').contains(e.target))
+    document.getElementById('user-dropdown').classList.remove('open');
+});
+
+async function signOut() {
+  await sb.auth.signOut();
+  flights = [];
+  currentUser = null;
+  renderFlights();
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('user-dropdown').classList.remove('open');
+}
+
+// ─── Supabase flight CRUD ─────────────────────────────────────────────────────
+async function loadFlightsFromDB() {
+  const { data, error } = await sb.from('flights').select('*').order('date', { ascending: false, nullsFirst: false });
+  if (error) { console.error('Load error:', error); return; }
+  flights = (data || []).map(r => ({
+    id: r.id,
+    from: r.from,
+    to: r.to,
+    date: r.date,
+    airline: r.airline,
+    flightno: r.flightno,
+  }));
+  renderFlights();
+}
+
+async function addFlightToDB(f) {
+  const { data, error } = await sb.from('flights').insert([{
+    user_id: currentUser.id,
+    from: f.from,
+    to: f.to,
+    date: f.date || null,
+    airline: f.airline || null,
+    flightno: f.flightno || null,
+  }]).select().single();
+  if (error) { console.error('Insert error:', error); return null; }
+  return data;
+}
+
+async function deleteFlightFromDB(id) {
+  const { error } = await sb.from('flights').delete().eq('id', id);
+  if (error) console.error('Delete error:', error);
+}
 
 // ─── Map projection — equirectangular matching D3 scale=159, translate=[500,250] ─
 function project(lat, lng) {
@@ -1042,7 +1349,7 @@ function checkUnknownAirports(from, to) {
   return unknowns;
 }
 
-function saveFlight() {
+async function saveFlight() {
   const from = document.getElementById('f-from').value.trim().toUpperCase();
   const to = document.getElementById('f-to').value.trim().toUpperCase();
   const date = document.getElementById('f-date').value;
@@ -1097,20 +1404,30 @@ function saveFlight() {
     document.getElementById('custom-airport-fields').style.display = 'none';
   }
 
-  flights.push({ from, to, date, airline, flightno });
-  localStorage.setItem('flight-tracker-v1', JSON.stringify(flights));
+  const newFlight = { from, to, date, airline, flightno };
+  const saved = await addFlightToDB(newFlight);
+  if (!saved) return showError('Failed to save flight. Please try again.');
+  flights.push({ id: saved.id, ...newFlight });
+  // Re-sort by date
+  flights.sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return b.date.localeCompare(a.date);
+  });
   closeModal();
-  highlightedFlight = flights.length - 1;
+  highlightedFlight = flights.findIndex(f => f.id === saved.id);
   renderFlights();
 }
 
-function deleteFlight(idx, e) {
+async function deleteFlight(idx, e) {
   e.stopPropagation();
   if (!confirm('Remove this flight?')) return;
+  const flight = flights[idx];
+  await deleteFlightFromDB(flight.id);
   flights.splice(idx, 1);
   if (highlightedFlight === idx) highlightedFlight = null;
   else if (highlightedFlight > idx) highlightedFlight--;
-  localStorage.setItem('flight-tracker-v1', JSON.stringify(flights));
   renderFlights();
 }
 
@@ -1265,6 +1582,30 @@ svg.addEventListener('touchend', () => { drag = null; lastPinchDist = null; });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadWorldMap();
+
+// Listen for auth state changes
+sb.auth.onAuthStateChange(async (event, session) => {
+  const loading = document.getElementById('loading-overlay');
+  const authScreen = document.getElementById('auth-screen');
+
+  if (session?.user) {
+    currentUser = session.user;
+    const username = currentUser.user_metadata?.username || currentUser.email.replace(FAKE_DOMAIN, '');
+    document.getElementById('user-btn').textContent = username;
+    document.getElementById('user-email-item').textContent = username;
+    // Hide auth/loading, show app
+    authScreen.style.display = 'none';
+    loading.style.display = 'none';
+    // Load flights from DB
+    await loadFlightsFromDB();
+  } else {
+    currentUser = null;
+    flights = [];
+    loading.style.display = 'none';
+    authScreen.style.display = 'flex';
+    renderFlights();
+  }
+});
 </script>
 </body>
 </html>
